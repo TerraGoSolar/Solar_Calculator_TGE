@@ -94,7 +94,7 @@
     </div>
     <div class="form-group">
       <label for="psh">PSH (kWh/m²/day):</label>
-      <input type="number" step="0.1" id="psh" placeholder="Enter PSH" value="3.5">
+      <input type="number" step="0.1" id="psh" placeholder="Enter PSH" value="4.485">
     </div>
     <button onclick="calculate()">Calculate</button>
     <div class="result" id="result"></div>
@@ -109,7 +109,7 @@
       const psh = parseFloat(document.getElementById('psh').value);
 
       // Constants
-      const systemCostPerKwp = 4000;
+      const systemCostPerKwp = 4200;
 
       // Calculate Proposed Capacity (rounded to 1 decimal place)
       let proposedCapacity = (averageConsumption * 12) / (psh * 390);
@@ -159,6 +159,7 @@
     function calculateMonthlyEnergySavings(monthlyConsumption, monthlyGeneration, icptRate, kwtbbRate, tariffType) {
       // Calculate TNB bill without solar
       const tnbBillWithoutSolar = calculateTNBbill(monthlyConsumption, icptRate, kwtbbRate, tariffType);
+
       // Calculate TNB bill after solar
       const tnbBillAfterSolar = calculateTNBbillAfterSolar(
         monthlyConsumption,
@@ -167,6 +168,7 @@
         kwtbbRate,
         tariffType
       );
+
       // Monthly savings
       return tnbBillWithoutSolar - tnbBillAfterSolar;
     }
@@ -179,20 +181,52 @@
       } else if (tariffType === 'B') {
         baseRate = calculateTariffB(consumption);
       }
-      // Calculate ICPT and KWTBB
-      const icpt = consumption * icptRate;
-      const kwtbb = baseRate * (kwtbbRate / 100); // Convert % to decimal
+
+      // Split Base Rate into two parts: up to 600 kWh and above 600 kWh
+      let baseRateUpTo600 = 0;
+      let baseRateAbove600 = 0;
+      if (consumption <= 600) {
+        baseRateUpTo600 = baseRate;
+      } else {
+        // Recalculate base rate for the first 600 kWh
+        if (tariffType === 'A') {
+          baseRateUpTo600 = calculateTariffA(600);
+        } else if (tariffType === 'B') {
+          baseRateUpTo600 = calculateTariffB(600);
+        }
+        baseRateAbove600 = baseRate - baseRateUpTo600;
+      }
+
+      // Calculate ICPT
+      const icpt = parseFloat((consumption * icptRate).toFixed(2));
+
+      // Calculate KWTBB
+      const kwtbb = parseFloat((baseRate * (kwtbbRate / 100)).toFixed(2));
+
+      // Calculate SST (8% on base rate above 600 kWh)
+      const sst = parseFloat((baseRateAbove600 * 0.08).toFixed(2));
+
+      // Log intermediate values for debugging
+      console.log("Base Rate Up to 600:", baseRateUpTo600);
+      console.log("Base Rate Above 600:", baseRateAbove600);
+      console.log("ICPT:", icpt);
+      console.log("KWTBB:", kwtbb);
+      console.log("SST:", sst);
+
       // Calculate Total Bill
-      return parseFloat((baseRate + icpt + kwtbb).toFixed(2)); // Round to 2 decimal places
+      const totalBill = parseFloat((baseRate + icpt + kwtbb + sst).toFixed(2));
+      return totalBill;
     }
 
     function calculateTNBbillAfterSolar(consumption, solarGeneration, icptRate, kwtbbRate, tariffType) {
       // Calculate Net Consumption (Consumption - Solar Generation)
       let netConsumption = consumption - solarGeneration;
+
       // If Net Consumption is negative, set it to 0
       if (netConsumption < 0) {
         netConsumption = 0;
       }
+
       // Define Minimum Charge for Tariff A and Tariff B
       let minimumCharge = 0;
       if (tariffType === 'A') {
@@ -200,6 +234,7 @@
       } else if (tariffType === 'B') {
         minimumCharge = 20; // Minimum charge for Tariff B (Commercial)
       }
+
       // Calculate Base Rate based on Tariff Type
       let baseRate = 0;
       if (tariffType === 'A') {
@@ -207,16 +242,39 @@
       } else if (tariffType === 'B') {
         baseRate = calculateTariffB(netConsumption);
       }
-      // Calculate ICPT and KWTBB
-      const icpt = netConsumption * icptRate;
-      const kwtbb = baseRate * (kwtbbRate / 100); // Convert % to decimal
+
+      // Split Base Rate into two parts: up to 600 kWh and above 600 kWh
+      let baseRateUpTo600 = 0;
+      let baseRateAbove600 = 0;
+      if (netConsumption <= 600) {
+        baseRateUpTo600 = baseRate;
+      } else {
+        // Recalculate base rate for the first 600 kWh
+        if (tariffType === 'A') {
+          baseRateUpTo600 = calculateTariffA(600);
+        } else if (tariffType === 'B') {
+          baseRateUpTo600 = calculateTariffB(600);
+        }
+        baseRateAbove600 = baseRate - baseRateUpTo600;
+      }
+
+      // Calculate ICPT
+      const icpt = parseFloat((netConsumption * icptRate).toFixed(2));
+
+      // Calculate KWTBB
+      const kwtbb = parseFloat((baseRate * (kwtbbRate / 100)).toFixed(2));
+
+      // Calculate SST (8% on base rate above 600 kWh)
+      const sst = parseFloat((baseRateAbove600 * 0.08).toFixed(2));
+
       // Calculate Total Bill
       let totalBill = 0;
       if (netConsumption === 0) {
-        totalBill = minimumCharge + icpt + kwtbb;
+        totalBill = minimumCharge + icpt + kwtbb + sst;
       } else {
-        totalBill = baseRate + icpt + kwtbb;
+        totalBill = baseRate + icpt + kwtbb + sst;
       }
+
       return parseFloat(totalBill.toFixed(2)); // Round to 2 decimal places
     }
 
@@ -226,13 +284,13 @@
       else if (consumption <= 600)
         return parseFloat((200 * 0.218 + 100 * 0.334 + (consumption - 300) * 0.516).toFixed(2));
       else if (consumption <= 900)
-        return parseFloat((200 * 0.218 + 100 * 0.334 + 300 * 0.516 + (consumption - 600) * 0.545).toFixed(2));
+        return parseFloat((200 * 0.218 + 100 * 0.334 + 300 * 0.516 + (consumption - 600) * 0.546).toFixed(2));
       else
         return parseFloat((
           200 * 0.218 +
           100 * 0.334 +
           300 * 0.516 +
-          300 * 0.545 +
+          300 * 0.546 +
           (consumption - 900) * 0.571
         ).toFixed(2));
     }
